@@ -1,0 +1,73 @@
+x-app-env: &app-env
+  DATABASE_URL: postgresql+psycopg://agent:${DB_PASSWORD:-changeme}@postgres/social_agent
+  REDIS_URL: redis://redis:6379
+  QUEUE_MODE: celery
+  DRY_RUN: ${DRY_RUN:-true}
+  # Required: without a shared key, web/worker can't decrypt each other's data.
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env (see README)}
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: social_agent
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d social_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+    environment: *app-env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./browser_profiles:/app/browser_profiles
+      - ./media_cache:/app/media_cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: celery -A src.workers.celery_app worker --loglevel=info
+    environment: *app-env
+    volumes:
+      - ./browser_profiles:/app/browser_profiles
+      - ./media_cache:/app/media_cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    build: .
+    command: celery -A src.workers.celery_app beat --loglevel=info
+    environment: *app-env
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

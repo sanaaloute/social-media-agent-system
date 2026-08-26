@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.db
+*.sqlite3
+checkpoints.db
+dev.db
+browser_profiles/
+media_cache/
+.pytest_cache/
+*.egg-info/
+.DS_Store
+.vscode/
