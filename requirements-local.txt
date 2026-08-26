@@ -8,3 +8,5 @@ transformers
 accelerate
 safetensors
 sentencepiece
+imageio
+imageio-ffmpeg
