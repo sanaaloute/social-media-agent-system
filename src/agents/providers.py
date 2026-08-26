@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 
 import httpx
 from PIL import Image, ImageDraw
+from pydantic import ValidationError
 
 from src.core import runtime_settings
 from src.core.config import get_settings
@@ -36,6 +37,34 @@ def _extract_json(text: str) -> dict:
     except (json.JSONDecodeError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def merge_llm_schema(schema_cls, defaults: dict, llm_data: dict):
+    """Merge LLM output over deterministic defaults with per-field fallback.
+
+    Real LLMs occasionally return a wrong type for one field (a dict where a
+    string belongs, a list where a scalar belongs). Rather than failing the
+    whole pipeline run, revert just the offending fields to their defaults
+    and keep every well-typed LLM value (§3.3).
+    """
+    data = dict(defaults)
+    data.update(
+        {k: v for k, v in (llm_data or {}).items() if k in schema_cls.model_fields}
+    )
+    for _ in range(len(schema_cls.model_fields) + 1):
+        try:
+            return schema_cls.model_validate(data)
+        except ValidationError as exc:
+            locs = {err.get("loc", (None,))[0] for err in exc.errors()}
+            locs.discard(None)
+            if not locs:
+                break
+            for loc in locs:
+                if loc in defaults:
+                    data[loc] = defaults[loc]
+                else:
+                    data.pop(loc, None)
+    return schema_cls.model_validate(defaults)
 
 
 # ── LLM ───────────────────────────────────────────────────────────────
@@ -131,28 +160,67 @@ class OpenAILLM(LLMProvider):
 
 
 class OllamaLLM(LLMProvider):
-    """Local Ollama chat API (no key required)."""
-
-    MODEL = "llama3.1"
+    """Local Ollama chat API (no key required; runs on the local GPU)."""
 
     def __init__(self) -> None:
         self._base_url = get_settings().ollama_base_url.rstrip("/")
+        self._model = get_settings().ollama_model
+
+    def _chat(self, system: str, prompt: str, json_mode: bool = False) -> str:
+        payload = {
+            "model": self._model,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+        }
+        if json_mode:
+            payload["format"] = "json"  # Ollama-enforced JSON output
+        resp = httpx.post(
+            f"{self._base_url}/api/chat", json=payload, timeout=_TIMEOUT
+        )
+        resp.raise_for_status()
+        return resp.json().get("message", {}).get("content", "")
+
+    def complete(self, system: str, prompt: str) -> str:
+        return self._chat(system, prompt)
+
+    def complete_json(self, system: str, prompt: str) -> dict:
+        raw = self._chat(system, f"{prompt}\n\n{_JSON_INSTRUCTION}", json_mode=True)
+        return _extract_json(raw)
+
+
+class OpenRouterLLM(LLMProvider):
+    """OpenRouter — one OpenAI-compatible gateway to many hosted models."""
+
+    API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+    def __init__(self) -> None:
+        self._api_key = get_settings().openrouter_api_key
+        if not self._api_key:
+            raise RuntimeError(
+                "OPENROUTER_API_KEY is not set — add it to .env "
+                "or use LLM_PROVIDER=ollama/mock"
+            )
+        self._model = get_settings().openrouter_model
 
     def complete(self, system: str, prompt: str) -> str:
         resp = httpx.post(
-            f"{self._base_url}/api/chat",
+            self.API_URL,
             json={
-                "model": self.MODEL,
-                "stream": False,
+                "model": self._model,
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
                 ],
             },
+            headers={"Authorization": f"Bearer {self._api_key}"},
             timeout=_TIMEOUT,
         )
         resp.raise_for_status()
-        return resp.json().get("message", {}).get("content", "")
+        choices = resp.json().get("choices") or []
+        return choices[0]["message"]["content"] if choices else ""
 
 
 # ── Images ────────────────────────────────────────────────────────────
@@ -414,6 +482,124 @@ class KlingVideo(VideoProvider):
         raise RuntimeError("Kling video generation timed out while polling")
 
 
+# ── kie.ai (unified media generation: images + video, one API key) ─────
+#
+# Async job pattern (https://kie.ai docs):
+#   POST /api/v1/jobs/createTask {model, input}  -> taskId
+#   GET  /api/v1/jobs/recordInfo?taskId=...      -> poll until state success
+# Result payloads vary per model family, so result URLs are extracted
+# defensively (any http URL ending in a media extension, anywhere in data).
+
+_MEDIA_EXT = (".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".webm")
+
+
+def _find_media_urls(obj) -> list[str]:
+    """Recursively collect media URLs from a kie.ai recordInfo payload."""
+    urls = []
+    if isinstance(obj, dict):
+        for value in obj.values():
+            urls.extend(_find_media_urls(value))
+    elif isinstance(obj, list):
+        for value in obj:
+            urls.extend(_find_media_urls(value))
+    elif isinstance(obj, str):
+        candidate = obj.split("?")[0].lower()
+        if obj.startswith("http") and candidate.endswith(_MEDIA_EXT):
+            urls.append(obj)
+        elif obj.strip().startswith(("{", "[")):
+            try:
+                urls.extend(_find_media_urls(json.loads(obj)))
+            except ValueError:
+                pass
+    return urls
+
+
+class _KieBase:
+    BASE_URL = "https://api.kie.ai"
+    POLL_INTERVAL = 5.0  # seconds
+
+    def __init__(self) -> None:
+        self._api_key = get_settings().kie_api_key
+        if not self._api_key:
+            raise RuntimeError(
+                "KIE_API_KEY is not set — add it to .env or use the mock provider"
+            )
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self._api_key}"}
+
+    def _run_task(self, model: str, input_payload: dict, timeout_sec: float) -> list[str]:
+        resp = httpx.post(
+            f"{self.BASE_URL}/api/v1/jobs/createTask",
+            json={"model": model, "input": input_payload},
+            headers=self._headers(),
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        task_id = (body.get("data") or {}).get("taskId")
+        if not task_id:
+            raise RuntimeError(f"kie.ai createTask rejected: {str(body)[:300]}")
+
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            time.sleep(self.POLL_INTERVAL)
+            poll = httpx.get(
+                f"{self.BASE_URL}/api/v1/jobs/recordInfo",
+                params={"taskId": task_id},
+                headers=self._headers(),
+                timeout=30.0,
+            )
+            poll.raise_for_status()
+            data = poll.json().get("data") or {}
+            state = str(data.get("state") or data.get("status") or "").lower()
+            if state in ("success", "succeeded", "complete", "completed", "done"):
+                urls = _find_media_urls(data)
+                if urls:
+                    return urls
+                raise RuntimeError(
+                    f"kie.ai task succeeded but no media URLs found: {str(data)[:300]}"
+                )
+            if state in ("fail", "failed", "error"):
+                raise RuntimeError(f"kie.ai task failed: {str(data)[:300]}")
+        raise RuntimeError(f"kie.ai task {task_id} timed out after {timeout_sec:.0f}s")
+
+    def _download(self, url: str, out_dir: str, stem: str, index: int, default_ext: str) -> str:
+        resp = httpx.get(url, timeout=120.0, follow_redirects=True)
+        resp.raise_for_status()
+        ext = os.path.splitext(url.split("?")[0])[1] or default_ext
+        path = os.path.join(out_dir, f"{stem}_{index + 1}{ext}")
+        with open(path, "wb") as fh:
+            fh.write(resp.content)
+        return path
+
+
+class KieImage(_KieBase, ImageProvider):
+    """kie.ai image generation (model via KIE_IMAGE_MODEL, e.g. gpt-image-1.5)."""
+
+    def generate(self, prompt: str, out_dir: str, count: int = 1) -> list[str]:
+        os.makedirs(out_dir, exist_ok=True)
+        model = get_settings().kie_image_model
+        urls = self._run_task(model, {"prompt": prompt, "n": count}, timeout_sec=300)
+        return [
+            self._download(url, out_dir, "image", i, ".png")
+            for i, url in enumerate(urls[:count])
+        ]
+
+
+class KieVideo(_KieBase, VideoProvider):
+    """kie.ai video generation (model via KIE_VIDEO_MODEL, e.g. veo3.1, kling)."""
+
+    def generate(self, prompt: str, out_dir: str, count: int = 1) -> list[str]:
+        os.makedirs(out_dir, exist_ok=True)
+        model = get_settings().kie_video_model
+        urls = self._run_task(model, {"prompt": prompt}, timeout_sec=600)
+        return [
+            self._download(url, out_dir, "video", i, ".mp4")
+            for i, url in enumerate(urls[:count])
+        ]
+
+
 # ── Factories ─────────────────────────────────────────────────────────
 
 _LLM_PROVIDERS = {
@@ -421,16 +607,19 @@ _LLM_PROVIDERS = {
     "claude": ClaudeLLM,
     "openai": OpenAILLM,
     "ollama": OllamaLLM,
+    "openrouter": OpenRouterLLM,
 }
 _IMAGE_PROVIDERS = {
     "mock": MockImage,
     "dalle": DallEImage,
     "stable_diffusion": StableDiffusionImage,
+    "kie": KieImage,
 }
 _VIDEO_PROVIDERS = {
     "mock": MockVideo,
     "falai": FalAIVideo,
     "kling": KlingVideo,
+    "kie": KieVideo,
 }
 
 # Instances are cached per provider name so a runtime settings change

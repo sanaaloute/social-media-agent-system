@@ -12,7 +12,13 @@ from sqlmodel import Session
 
 from src.agents.graph import create_workflow
 from src.core.database.engine import engine, init_db
-from src.core.models import ApprovalStatus, ContentTask, GeneratedContent, TaskStatus
+from src.core.models import (
+    ApprovalStatus,
+    Brand,
+    ContentTask,
+    GeneratedContent,
+    TaskStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +44,17 @@ def run_generation(task_id: str) -> dict:
         session.add(task)
         session.commit()
 
+        brand = session.get(Brand, task.brand_id) if task.brand_id else None
         initial_state = {
             "task_id": task.id,
-            "brand_context": {"brand_id": task.brand_id, "content_type": task.content_type},
+            "brand_context": {
+                "brand_id": task.brand_id,
+                "content_type": task.content_type,
+                "name": brand.name if brand else "",
+                "niche": brand.niche if brand else "",
+                "keywords": list(brand.keywords) if brand else [],
+                "tone": brand.tone if brand else "",
+            },
             "topic": task.topic,
             "platforms": task.platforms,
             "research_results": None,
@@ -95,6 +109,7 @@ def run_generation(task_id: str) -> dict:
             session.refresh(content)
             content_ids.append(content.id)
 
+        task.topic = final_state.get("topic") or task.topic
         task.status = TaskStatus.GENERATED.value
         session.add(task)
         session.commit()

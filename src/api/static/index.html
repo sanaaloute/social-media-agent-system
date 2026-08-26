@@ -230,6 +230,20 @@
     outline: none; border-color: rgba(94, 234, 212, 0.55);
     box-shadow: 0 0 0 3px rgba(94, 234, 212, 0.12);
   }
+  input[type="text"], select {
+    background: rgba(6, 10, 19, 0.55);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font: inherit; font-size: 13px;
+    padding: 9px 13px;
+  }
+  input[type="text"] { width: 100%; margin-top: 10px; }
+  input[type="text"]:focus, select:focus {
+    outline: none; border-color: rgba(94, 234, 212, 0.55);
+    box-shadow: 0 0 0 3px rgba(94, 234, 212, 0.12);
+  }
+  select option { background: #101724; }
   .compose-row { display: flex; align-items: center; gap: 9px; margin-top: 12px; flex-wrap: wrap; }
   #compose-media { display: none; }
   .attach-label {
@@ -317,6 +331,25 @@
       </div>
       <div class="err" id="compose-err" hidden></div>
       <div class="compose-results" id="compose-results"></div>
+    </div>
+    <h2>Generate with AI</h2>
+    <div class="card" id="generate">
+      <input type="text" id="gen-topic" placeholder="Topic (optional — leave empty to discover hot topics in your niche)">
+      <div class="compose-row">
+        <select id="gen-brand"><option value="">— no brand / niche —</option></select>
+        <select id="gen-type">
+          <option value="mixed">mixed</option>
+          <option value="text">text</option>
+          <option value="image">image</option>
+          <option value="video">video</option>
+        </select>
+      </div>
+      <div class="compose-row" id="gen-platforms"></div>
+      <div class="actions">
+        <button class="post-now" id="gen-submit" onclick="onGenerate()">Generate drafts</button>
+      </div>
+      <div class="err" id="gen-err" hidden></div>
+      <div class="compose-results" id="gen-results"></div>
     </div>
     <h2>Pending approvals <span class="count-pill" id="pending-count">0</span></h2>
     <div id="pending"></div>
@@ -573,6 +606,72 @@ async function onCompose() {
   }
 }
 
+/* ---------------- AI generation (agent pipeline) ---------------- */
+
+const genTopic = document.getElementById("gen-topic");
+const genBrand = document.getElementById("gen-brand");
+const genType = document.getElementById("gen-type");
+const genPlats = document.getElementById("gen-platforms");
+const genSubmit = document.getElementById("gen-submit");
+const genErr = document.getElementById("gen-err");
+const genResults = document.getElementById("gen-results");
+
+async function loadGenForm() {
+  try {
+    const platforms = await api("/api/platforms");
+    genPlats.innerHTML = platforms.map((p) => `
+      <label class="plat-chip ${p.has_account ? "" : "no-acct"}" title="${esc(p.name)}">
+        <input type="checkbox" value="${esc(p.name)}"> ${esc(p.name)}${p.has_account ? "" : " &#9888;"}
+      </label>`).join("");
+  } catch (e) { /* non-fatal */ }
+  try {
+    const brands = await api("/api/brands");
+    genBrand.innerHTML = '<option value="">— no brand / niche —</option>' +
+      brands.map((b) =>
+        `<option value="${esc(b.id)}">${esc(b.name)} (${esc(b.niche)})</option>`).join("");
+  } catch (e) { /* non-fatal */ }
+}
+
+async function onGenerate() {
+  const platforms = [...genPlats.querySelectorAll("input:checked")].map((cb) => cb.value);
+  genErr.hidden = true;
+  genResults.innerHTML = "";
+  if (!platforms.length) {
+    genErr.textContent = "Pick at least one platform.";
+    genErr.hidden = false;
+    return;
+  }
+  if (!genTopic.value.trim() && !genBrand.value) {
+    genErr.textContent = "Enter a topic or pick a brand (its niche guides discovery).";
+    genErr.hidden = false;
+    return;
+  }
+  genSubmit.disabled = true;
+  genSubmit.textContent = "Generating… (local LLM may take a minute)";
+  try {
+    const task = await api("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        brand_id: genBrand.value || null,
+        topic: genTopic.value.trim() || null,
+        platforms,
+        content_type: genType.value,
+      }),
+    });
+    genResults.innerHTML =
+      `<div class="ok">Drafts generated about “${esc(task.topic || "hot topics")}” — see the approval queue below.</div>`;
+    genTopic.value = "";
+    await refresh();
+  } catch (e) {
+    genErr.textContent = e.message;
+    genErr.hidden = false;
+  } finally {
+    genSubmit.disabled = false;
+    genSubmit.textContent = "Generate drafts";
+  }
+}
+
 function connectWs() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws/status`);
@@ -587,6 +686,7 @@ function connectWs() {
 
 refresh();
 loadComposePlatforms();
+loadGenForm();
 setInterval(loadPending, 5000);
 setInterval(loadRecent, 5000);
 connectWs();

@@ -8,7 +8,7 @@ type; "mixed" keeps the per-platform default mapping.
 """
 import logging
 
-from src.agents.providers import get_llm_provider
+from src.agents.providers import get_llm_provider, merge_llm_schema
 from src.agents.state import AgentState
 from src.core.models.schemas import PlatformDraft
 
@@ -50,6 +50,9 @@ def writer_agent(state: AgentState) -> dict:
     llm = get_llm_provider()
 
     drafts = {}
+    brand = state.get("brand_context") or {}
+    niche = brand.get("niche") or ""
+    brand_tone = brand.get("tone") or ""
     for platform in platforms:
         max_chars, tag_count, tone = _PLATFORM_STYLE.get(platform, _DEFAULT_STYLE)
         content_type = forced_type or _PLATFORM_CONTENT_TYPE.get(platform, "text")
@@ -66,6 +69,7 @@ def writer_agent(state: AgentState) -> dict:
             f"Angle: {angle}\n"
             f"Guidelines: {plan.get('guidelines', '')}\n"
             f"Research summary: {summary}\n"
+            f"Niche: {niche or 'general'}. Brand tone: {brand_tone or 'neutral'}.\n"
             f"Constraints: {tone} tone; max {max_chars} characters; "
             f"exactly {tag_count} hashtags; content_type {content_type}.\n"
             'Return JSON like {"text": "...", "hashtags": ["#..."], '
@@ -73,13 +77,15 @@ def writer_agent(state: AgentState) -> dict:
         )
         if feedback:
             prompt += f"\n\nRevision feedback to address: {feedback}"
-        data = defaults | llm.complete_json(
-            system="You are a social-media copywriter.", prompt=prompt
+        draft = merge_llm_schema(
+            PlatformDraft,
+            defaults,
+            llm.complete_json(
+                system="You are a social-media copywriter.", prompt=prompt
+            ),
         )
-        data = {k: v for k, v in data.items() if k in PlatformDraft.model_fields}
-        data["platform"] = platform  # the dict key is authoritative
+        draft = draft.model_copy(update={"platform": platform})
         if forced_type:  # task-level request wins over any LLM override
-            data["content_type"] = forced_type
-        draft = PlatformDraft(**data)
+            draft = draft.model_copy(update={"content_type": forced_type})
         drafts[platform] = draft.model_dump()
     return {"drafts": drafts, "status": "drafted"}

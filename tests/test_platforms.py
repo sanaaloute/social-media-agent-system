@@ -27,7 +27,7 @@ def test_task_platforms_are_normalized_and_validated(client):
     # Mixed case is normalized instead of failing account matching later.
     resp = client.post(
         "/api/tasks",
-        json={"brand_id": "b", "platforms": ["Twitter", "LINKEDIN"],
+        json={"platforms": ["Twitter", "LINKEDIN"],
               "topic": "t", "content_type": "text"},
     )
     assert resp.status_code == 201, resp.text

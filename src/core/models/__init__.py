@@ -4,6 +4,7 @@ from src.core.models.content import GeneratedContent
 from src.core.models.account import PlatformAccount
 from src.core.models.audit import AuditLog
 from src.core.models.setting import AppSetting
+from src.core.models.brand import Brand
 from src.core.models.schemas import (
     ContentPlan,
     PlatformDraft,
@@ -20,6 +21,7 @@ __all__ = [
     "PlatformAccount",
     "AuditLog",
     "AppSetting",
+    "Brand",
     "ContentPlan",
     "PlatformDraft",
     "QualityReport",

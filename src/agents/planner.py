@@ -5,7 +5,7 @@ Default schedule slots each platform at now+1h, now+2h, ... (ISO-8601, UTC).
 import logging
 from datetime import datetime, timedelta, timezone
 
-from src.agents.providers import get_llm_provider
+from src.agents.providers import get_llm_provider, merge_llm_schema
 from src.agents.state import AgentState
 from src.core.models.schemas import ContentPlan
 
@@ -31,16 +31,18 @@ def planner_agent(state: AgentState) -> dict:
         "schedule": schedule,
     }
     llm = get_llm_provider()
-    data = defaults | llm.complete_json(
-        system="You are a social-media content strategist.",
-        prompt=(
-            f"Plan a content campaign about: {topic}.\n"
-            f"Target platforms: {', '.join(platforms)}.\n"
-            f"Research: {research.get('summary', '')}\n"
-            'Return JSON like {"angle": "...", "guidelines": "...", '
-            '"schedule": {"platform": "ISO-8601 time"}}.'
+    plan = merge_llm_schema(
+        ContentPlan,
+        defaults,
+        llm.complete_json(
+            system="You are a social-media content strategist.",
+            prompt=(
+                f"Plan a content campaign about: {topic}.\n"
+                f"Target platforms: {', '.join(platforms)}.\n"
+                f"Research: {research.get('summary', '')}\n"
+                'Return JSON like {"angle": "...", "guidelines": "...", '
+                '"schedule": {"platform": "ISO-8601 time"}}.'
+            ),
         ),
     )
-    data = {k: v for k, v in data.items() if k in ContentPlan.model_fields}
-    plan = ContentPlan(**data)
     return {"content_plan": plan.model_dump(), "status": "planned"}

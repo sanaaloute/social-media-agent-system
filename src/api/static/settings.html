@@ -223,6 +223,30 @@
     </div>
     <div class="status-msg" id="accounts-msg"></div>
   </div>
+  <h2>Brands / niches</h2>
+  <div class="card">
+    <table class="acct-table">
+      <thead>
+        <tr><th>Name</th><th>Niche</th><th>Keywords</th><th></th></tr>
+      </thead>
+      <tbody id="brands-body"></tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="setting-row" style="border:none;padding-top:0">
+      <div class="meta">
+        <div class="name">Add brand</div>
+        <div class="desc">The niche and keywords guide the Researcher Agent's hot-topic discovery when a post is generated without an explicit topic.</div>
+      </div>
+    </div>
+    <div class="form-grid">
+      <input type="text" id="brand-name" placeholder="Brand name">
+      <input type="text" id="brand-niche" placeholder="Niche (e.g. tech, entertainment)">
+      <input type="text" id="brand-keywords" placeholder="Keywords, comma-separated" style="min-width:260px">
+      <button class="save" id="add-brand" onclick="onAddBrand()">Add</button>
+    </div>
+    <div class="status-msg" id="brands-msg"></div>
+  </div>
 </main>
 <script>
 const PLATFORM_COLORS = {
@@ -411,9 +435,68 @@ async function onDeactivate(id) {
   }
 }
 
+/* ---------------- brands / niches ---------------- */
+
+function brandsMsg(text, ok) {
+  const el = document.getElementById("brands-msg");
+  el.textContent = text;
+  el.className = "status-msg " + (ok ? "ok" : "bad");
+}
+
+async function loadBrands() {
+  const brands = await api("/api/brands");
+  const body = document.getElementById("brands-body");
+  if (!brands.length) {
+    body.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">No brands defined yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = brands.map((b) => `
+    <tr>
+      <td>${esc(b.name)}</td>
+      <td>${esc(b.niche)}</td>
+      <td style="color:var(--muted)">${esc((b.keywords || []).join(", "))}</td>
+      <td><button class="danger" onclick="onDeleteBrand('${esc(b.id)}')">Delete</button></td>
+    </tr>`).join("");
+}
+
+async function onAddBrand() {
+  const name = document.getElementById("brand-name").value.trim();
+  const niche = document.getElementById("brand-niche").value.trim();
+  const keywords = document.getElementById("brand-keywords").value
+    .split(",").map((k) => k.trim()).filter(Boolean);
+  if (!name || !niche) { brandsMsg("Name and niche are required.", false); return; }
+  document.getElementById("add-brand").disabled = true;
+  try {
+    await api("/api/brands", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, niche, keywords }),
+    });
+    document.getElementById("brand-name").value = "";
+    document.getElementById("brand-niche").value = "";
+    document.getElementById("brand-keywords").value = "";
+    brandsMsg(`Brand "${name}" added — its niche now guides topic discovery.`, true);
+    await loadBrands();
+  } catch (e) {
+    brandsMsg(e.message, false);
+  } finally {
+    document.getElementById("add-brand").disabled = false;
+  }
+}
+
+async function onDeleteBrand(id) {
+  try {
+    await api(`/api/brands/${id}`, { method: "DELETE" });
+    await loadBrands();
+  } catch (e) {
+    brandsMsg(e.message, false);
+  }
+}
+
 loadSettings().catch((e) => settingsMsg(e.message, false));
 loadAccounts().catch((e) => accountsMsg(e.message, false));
 loadPlatformOptions().catch(() => {});
+loadBrands().catch((e) => brandsMsg(e.message, false));
 </script>
 </body>
 </html>

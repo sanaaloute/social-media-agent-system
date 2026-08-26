@@ -7,7 +7,7 @@ override any field via complete_json.
 import json
 import logging
 
-from src.agents.providers import get_llm_provider
+from src.agents.providers import get_llm_provider, merge_llm_schema
 from src.agents.state import AgentState
 from src.core.models.schemas import QualityReport
 
@@ -43,15 +43,17 @@ def critic_agent(state: AgentState) -> dict:
             "feedback": "Drafts are on-topic and platform-appropriate.",
         }
     llm = get_llm_provider()
-    data = defaults | llm.complete_json(
-        system="You are a strict social-media content-quality reviewer.",
-        prompt=(
-            "Review these platform drafts and return JSON like "
-            '{"approved": true, "score": 0.0-1.0, "issues": ["..."], '
-            '"feedback": "..."}.\nDrafts:\n'
-            + json.dumps(drafts, ensure_ascii=False)[:4000]
+    report = merge_llm_schema(
+        QualityReport,
+        defaults,
+        llm.complete_json(
+            system="You are a strict social-media content-quality reviewer.",
+            prompt=(
+                "Review these platform drafts and return JSON like "
+                '{"approved": true, "score": 0.0-1.0, "issues": ["..."], '
+                '"feedback": "..."}.\nDrafts:\n'
+                + json.dumps(drafts, ensure_ascii=False)[:4000]
+            ),
         ),
     )
-    data = {k: v for k, v in data.items() if k in QualityReport.model_fields}
-    report = QualityReport(**data)
     return {"quality_report": report.model_dump(), "status": "critiqued"}

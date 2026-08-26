@@ -25,7 +25,6 @@ def _create_task(client, platforms=("twitter",)):
     resp = client.post(
         "/api/tasks",
         json={
-            "brand_id": "brand-1",
             "platforms": list(platforms),
             "topic": "spring product launch",
             "content_type": "text",

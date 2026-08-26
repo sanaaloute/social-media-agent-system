@@ -25,12 +25,12 @@ def _to_bool(value: Any) -> bool:
 _OVERRIDABLE: dict[str, tuple[Callable[[Any], Any], Callable[[Any], bool], Optional[list]]] = {
     "dry_run": (_to_bool, lambda v: isinstance(v, bool), None),
     "max_posts_per_account_per_day": (int, lambda v: 1 <= v <= 1000, None),
-    "llm_provider": (str, lambda v: v in ("mock", "claude", "openai", "ollama"),
-                     ["mock", "claude", "openai", "ollama"]),
-    "image_provider": (str, lambda v: v in ("mock", "dalle", "stable_diffusion"),
-                       ["mock", "dalle", "stable_diffusion"]),
-    "video_provider": (str, lambda v: v in ("mock", "falai", "kling"),
-                       ["mock", "falai", "kling"]),
+    "llm_provider": (str, lambda v: v in ("mock", "ollama", "openrouter", "claude", "openai"),
+                     ["mock", "ollama", "openrouter", "claude", "openai"]),
+    "image_provider": (str, lambda v: v in ("mock", "kie", "dalle", "stable_diffusion"),
+                       ["mock", "kie", "dalle", "stable_diffusion"]),
+    "video_provider": (str, lambda v: v in ("mock", "kie", "falai", "kling"),
+                       ["mock", "kie", "falai", "kling"]),
 }
 
 OVERRIDABLE_KEYS = sorted(_OVERRIDABLE)
