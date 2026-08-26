@@ -1,13 +1,23 @@
 # H24 Social Media Agent
 
-A multi-agent (LangGraph) system for multimodal social-media content generation and cross-platform publishing. It researches, plans, writes, illustrates, and critiques posts, then publishes them via official platform APIs or Playwright browser automation — with a mandatory human-in-the-loop approval step before anything is published.
+A multi-agent (LangGraph) system for multimodal social-media content generation and cross-platform publishing. It discovers hot topics on the live web, plans, writes, illustrates, and critiques posts, then publishes them via official platform APIs or Playwright browser automation. Human-in-the-loop approval is the default; a fully autonomous **autopilot** mode is available as a per-brand opt-in.
 
 ## Architecture
 
-- **User interaction** — FastAPI review panel (`/panel`) + REST API (`/api/...`); every post requires explicit human approval.
-- **LangGraph orchestration** — a Supervisor agent routes work through specialized agents: Research, Planner, Writer, Image, Video, and Critic.
+- **User interaction** — FastAPI review panel (`/panel`) + settings page (`/panel/settings.html`) + REST API (`/api/...`); every post requires explicit human approval unless the brand runs on autopilot.
+- **LangGraph orchestration** — a Supervisor routes work through specialized agents: Research, Planner, Writer, Image, Video, Critic, with a critic→writer reflection loop (capped revisions).
+- **Agentic capabilities** — brand-scoped long-term **memory** (covered topics, reviewer preferences), web **tooling** (Google News hot-topic discovery), per-node **structured logs**, **retry** with backoff on transient LLM errors, and an **LLM fallback chain** (primary → configured fallback → deterministic defaults).
+- **Generation providers** — LLM: Ollama (local GPU), OpenRouter, Claude, OpenAI; image: kie.ai, DALL-E, Stable Diffusion, local diffusion (GPU); video: kie.ai, fal.ai, Kling, local diffusion (GPU). Keyless `mock` defaults for everything.
 - **Publisher adapters** — official APIs for Facebook, Instagram, LinkedIn, YouTube, Twitter/X, and TikTok; Playwright browser automation for X and TikTok.
-- **Infrastructure** — PostgreSQL (state, credentials, audit), Redis (cache, rate limits, broker), Celery (task queue; eager mode for local dev).
+- **Infrastructure** — PostgreSQL (state, credentials, audit, memory), Redis (cache, rate limits, broker), Celery (task queue + autopilot beat; eager mode for local dev).
+
+## Autopilot (fully autonomous mode)
+
+Off by default. Two switches, both required: the global `AUTOPILOT_ENABLED` (settings page) and a per-brand `autopilot` flag with platforms set. Every 15 minutes (beat; or `POST /api/autopilot/tick` manually) the system then, per brand: discovers a hot topic in the brand's niche, decides content types and schedule itself, auto-approves the drafts, and publishes them at the planned time — no human intervention. The audit trail records every autopilot action under the `autopilot` actor, and the daily post cap still applies.
+
+## Local media generation (GPU)
+
+Ollama cannot generate images on Windows (experimental, macOS-only) and has no video support, so local media uses HuggingFace `diffusers` on the machine's GPU: `pip install -r requirements-local.txt`, then select `local` as the image/video provider in Settings. Defaults: SDXL-Turbo (image, seconds per image on an RTX 4090) and Wan2.1-T2V-1.3B (video, short dev-grade clips, minutes per clip).
 
 ## Project layout
 

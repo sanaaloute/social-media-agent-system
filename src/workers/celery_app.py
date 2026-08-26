@@ -19,6 +19,7 @@ celery_app = Celery(
     include=[
         "src.workers.generation_tasks",
         "src.workers.publish_tasks",
+        "src.workers.autopilot_tasks",
     ],
 )
 
@@ -29,5 +30,9 @@ celery_app.conf.beat_schedule = {
     "dispatch-due-content": {
         "task": "src.workers.publish_tasks.dispatch_due_task",
         "schedule": 60.0,
-    }
+    },
+    "autopilot-tick": {
+        "task": "src.workers.autopilot_tasks.autopilot_tick_task",
+        "schedule": 900.0,  # every 15 minutes
+    },
 }

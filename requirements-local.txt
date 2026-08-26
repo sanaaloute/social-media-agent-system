@@ -1,0 +1,10 @@
+# Optional: local image/video generation on the machine's GPU (§3.4).
+# Install only if you want the `local` image/video providers.
+# torch is installed separately with the CUDA wheel, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu126
+torch
+diffusers
+transformers
+accelerate
+safetensors
+sentencepiece

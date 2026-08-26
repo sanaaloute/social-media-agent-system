@@ -21,6 +21,8 @@ class BrandCreate(BaseModel):
     niche: str
     keywords: List[str] = Field(default_factory=list)
     tone: str = ""
+    platforms: List[str] = Field(default_factory=list)
+    autopilot: bool = False
 
 
 @router.post("", status_code=201, response_model=Brand)
@@ -32,6 +34,8 @@ def create_brand(payload: BrandCreate, session: Session = Depends(get_session)):
         niche=payload.niche.strip(),
         keywords=[k.strip() for k in payload.keywords if k.strip()],
         tone=payload.tone.strip(),
+        platforms=[p.strip().lower() for p in payload.platforms if p.strip()],
+        autopilot=payload.autopilot,
     )
     session.add(brand)
     _audit(

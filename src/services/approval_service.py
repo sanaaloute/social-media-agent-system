@@ -84,6 +84,14 @@ def approve(session: Session, content_id: str, actor: str) -> GeneratedContent:
     return content
 
 
+def _brand_id_for(session: Session, content: GeneratedContent) -> str:
+    """Brand behind a content row (via its task), for memory writes."""
+    from src.core.models import ContentTask
+
+    task = session.get(ContentTask, content.task_id)
+    return task.brand_id if task else ""
+
+
 def reject(
     session: Session, content_id: str, actor: str, feedback: str
 ) -> GeneratedContent:
@@ -102,6 +110,11 @@ def reject(
     )
     session.commit()
     session.refresh(content)
+    # Memory: the writer learns the reviewer's preferences from feedback.
+    if feedback.strip():
+        from src.agents.memory import remember
+
+        remember(_brand_id_for(session, content), "review_feedback", feedback)
     _notify(
         {
             "event": "reject",

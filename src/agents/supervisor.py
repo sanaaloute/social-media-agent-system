@@ -114,4 +114,10 @@ def run_generation(task_id: str) -> dict:
         session.add(task)
         session.commit()
 
+        # Memory: record the covered topic so future research avoids repeats.
+        if task.brand_id and task.topic:
+            from src.agents.memory import remember
+
+            remember(task.brand_id, "covered_topic", task.topic)
+
     return {"task_id": task_id, "status": "generated", "content_ids": content_ids}

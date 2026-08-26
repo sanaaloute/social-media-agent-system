@@ -16,9 +16,10 @@ class Settings(BaseSettings):
     dry_run: bool = True  # publishers simulate success instead of live calls
 
     # Generation providers
-    llm_provider: str = "mock"  # mock | claude | openai | ollama
-    image_provider: str = "mock"  # mock | dalle | stable_diffusion
-    video_provider: str = "mock"  # mock | falai | kling
+    llm_provider: str = "mock"  # mock | ollama | openrouter | claude | openai
+    llm_fallback_provider: str = "mock"  # backup LLM when the primary fails; "" = none
+    image_provider: str = "mock"  # mock | kie | dalle | stable_diffusion | local
+    video_provider: str = "mock"  # mock | kie | falai | kling | local
 
     # Provider credentials
     anthropic_api_key: str = ""
@@ -33,6 +34,13 @@ class Settings(BaseSettings):
     stability_api_key: str = ""
     fal_key: str = ""
     kling_api_key: str = ""
+    # Local diffusion (optional: pip install -r requirements-local.txt)
+    local_image_model: str = "stabilityai/sdxl-turbo"
+    local_video_model: str = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+
+    # Autopilot (fully autonomous mode; off by default — HITL is the default)
+    autopilot_enabled: bool = False
+    autopilot_interval_hours: int = 6  # min gap between auto-generated tasks/brand
 
     # Credential encryption (base64url-encoded 32-byte AES key)
     encryption_key: str = ""

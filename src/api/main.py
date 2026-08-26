@@ -11,7 +11,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from src.api.routes import accounts, approvals, brands, compose, contents, platforms, settings, tasks
+from src.api.routes import (
+    accounts,
+    approvals,
+    autopilot,
+    brands,
+    compose,
+    contents,
+    platforms,
+    settings,
+    tasks,
+)
 from src.api.websocket import status as ws_status
 from src.api.websocket.status import status_ws
 from src.core.database.engine import init_db
@@ -21,6 +31,9 @@ _STATIC_DIR = Path(__file__).parent / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from src.core.logging_setup import configure_logging
+
+    configure_logging()
     init_db()
     ws_status.set_loop(asyncio.get_running_loop())
     yield
@@ -39,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(contents.router, prefix="/api")
     app.include_router(approvals.router, prefix="/api")
     app.include_router(accounts.router, prefix="/api")
+    app.include_router(autopilot.router, prefix="/api")
     app.include_router(brands.router, prefix="/api")
     app.include_router(compose.router, prefix="/api")
     app.include_router(platforms.router, prefix="/api")

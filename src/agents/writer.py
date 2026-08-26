@@ -44,7 +44,9 @@ def writer_agent(state: AgentState) -> dict:
     platforms = state.get("platforms") or []
     plan = state.get("content_plan") or {}
     research = state.get("research_results") or {}
-    feedback = (state.get("quality_report") or {}).get("feedback") or ""
+    quality = state.get("quality_report") or {}
+    feedback = quality.get("feedback") or ""
+    issues = quality.get("issues") or []
     task_type = (state.get("brand_context") or {}).get("content_type", "mixed")
     forced_type = task_type if task_type in ("text", "image", "video") else None
     llm = get_llm_provider()
@@ -53,6 +55,23 @@ def writer_agent(state: AgentState) -> dict:
     brand = state.get("brand_context") or {}
     niche = brand.get("niche") or ""
     brand_tone = brand.get("tone") or ""
+    brand_id = brand.get("brand_id") or ""
+    # Memory: preferences learned from this brand's past review feedback.
+    from src.agents.memory import recall
+
+    learned = recall(brand_id, "review_feedback", limit=5, since_days=90)
+    memory_block = ""
+    if learned:
+        memory_block = (
+            "Reviewer preferences learned from past feedback:\n"
+            + "\n".join(f"- {item[:200]}" for item in learned)
+            + "\n"
+        )
+    revision_block = ""
+    if feedback:
+        revision_block = f"\n\nRevision feedback to address: {feedback}"
+        if issues:
+            revision_block += "\nIssues: " + "; ".join(str(i)[:120] for i in issues)
     for platform in platforms:
         max_chars, tag_count, tone = _PLATFORM_STYLE.get(platform, _DEFAULT_STYLE)
         content_type = forced_type or _PLATFORM_CONTENT_TYPE.get(platform, "text")
@@ -70,13 +89,13 @@ def writer_agent(state: AgentState) -> dict:
             f"Guidelines: {plan.get('guidelines', '')}\n"
             f"Research summary: {summary}\n"
             f"Niche: {niche or 'general'}. Brand tone: {brand_tone or 'neutral'}.\n"
-            f"Constraints: {tone} tone; max {max_chars} characters; "
+            + memory_block
+            + f"Constraints: {tone} tone; max {max_chars} characters; "
             f"exactly {tag_count} hashtags; content_type {content_type}.\n"
             'Return JSON like {"text": "...", "hashtags": ["#..."], '
             '"content_type": "..."}.'
         )
-        if feedback:
-            prompt += f"\n\nRevision feedback to address: {feedback}"
+        prompt += revision_block
         draft = merge_llm_schema(
             PlatformDraft,
             defaults,

@@ -242,7 +242,9 @@
     <div class="form-grid">
       <input type="text" id="brand-name" placeholder="Brand name">
       <input type="text" id="brand-niche" placeholder="Niche (e.g. tech, entertainment)">
-      <input type="text" id="brand-keywords" placeholder="Keywords, comma-separated" style="min-width:260px">
+      <input type="text" id="brand-keywords" placeholder="Keywords, comma-separated" style="min-width:220px">
+      <input type="text" id="brand-platforms" placeholder="Platforms (autopilot), e.g. twitter,linkedin" style="min-width:220px">
+      <label class="check-label"><input type="checkbox" id="brand-autopilot"> autopilot</label>
       <button class="save" id="add-brand" onclick="onAddBrand()">Add</button>
     </div>
     <div class="status-msg" id="brands-msg"></div>
@@ -261,8 +263,9 @@ const SETTING_META = {
   dry_run: { name: "Dry-run publishing", desc: "Simulate publishes instead of calling live platform APIs. Turn off only with real credentials configured." },
   max_posts_per_account_per_day: { name: "Daily post cap", desc: "Maximum posts per account per day (rate limiting, §6.3)." },
   llm_provider: { name: "LLM provider", desc: "Text generation backend for the agent pipeline." },
-  image_provider: { name: "Image provider", desc: "Image generation backend." },
-  video_provider: { name: "Video provider", desc: "Video generation backend." },
+  image_provider: { name: "Image provider", desc: "Image generation backend. 'local' uses your GPU (needs requirements-local.txt)." },
+  video_provider: { name: "Video provider", desc: "Video generation backend. 'local' uses your GPU (needs requirements-local.txt)." },
+  autopilot_enabled: { name: "Autopilot (global)", desc: "Master switch for fully autonomous mode: brands flagged autopilot discover topics, generate, auto-approve, and publish on schedule without human review." },
 };
 
 function esc(value) {
@@ -452,7 +455,7 @@ async function loadBrands() {
   }
   body.innerHTML = brands.map((b) => `
     <tr>
-      <td>${esc(b.name)}</td>
+      <td>${esc(b.name)}${b.autopilot ? ' <span class="overridden-tag">autopilot</span>' : ""}</td>
       <td>${esc(b.niche)}</td>
       <td style="color:var(--muted)">${esc((b.keywords || []).join(", "))}</td>
       <td><button class="danger" onclick="onDeleteBrand('${esc(b.id)}')">Delete</button></td>
@@ -464,17 +467,23 @@ async function onAddBrand() {
   const niche = document.getElementById("brand-niche").value.trim();
   const keywords = document.getElementById("brand-keywords").value
     .split(",").map((k) => k.trim()).filter(Boolean);
+  const platforms = document.getElementById("brand-platforms").value
+    .split(",").map((k) => k.trim()).filter(Boolean);
+  const autopilot = document.getElementById("brand-autopilot").checked;
   if (!name || !niche) { brandsMsg("Name and niche are required.", false); return; }
+  if (autopilot && !platforms.length) { brandsMsg("Autopilot brands need at least one platform.", false); return; }
   document.getElementById("add-brand").disabled = true;
   try {
     await api("/api/brands", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, niche, keywords }),
+      body: JSON.stringify({ name, niche, keywords, platforms, autopilot }),
     });
     document.getElementById("brand-name").value = "";
     document.getElementById("brand-niche").value = "";
     document.getElementById("brand-keywords").value = "";
+    document.getElementById("brand-platforms").value = "";
+    document.getElementById("brand-autopilot").checked = false;
     brandsMsg(`Brand "${name}" added — its niche now guides topic discovery.`, true);
     await loadBrands();
   } catch (e) {

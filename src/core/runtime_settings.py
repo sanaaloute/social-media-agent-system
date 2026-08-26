@@ -27,10 +27,11 @@ _OVERRIDABLE: dict[str, tuple[Callable[[Any], Any], Callable[[Any], bool], Optio
     "max_posts_per_account_per_day": (int, lambda v: 1 <= v <= 1000, None),
     "llm_provider": (str, lambda v: v in ("mock", "ollama", "openrouter", "claude", "openai"),
                      ["mock", "ollama", "openrouter", "claude", "openai"]),
-    "image_provider": (str, lambda v: v in ("mock", "kie", "dalle", "stable_diffusion"),
-                       ["mock", "kie", "dalle", "stable_diffusion"]),
-    "video_provider": (str, lambda v: v in ("mock", "kie", "falai", "kling"),
-                       ["mock", "kie", "falai", "kling"]),
+    "image_provider": (str, lambda v: v in ("mock", "kie", "dalle", "stable_diffusion", "local"),
+                       ["mock", "kie", "dalle", "stable_diffusion", "local"]),
+    "video_provider": (str, lambda v: v in ("mock", "kie", "falai", "kling", "local"),
+                       ["mock", "kie", "falai", "kling", "local"]),
+    "autopilot_enabled": (_to_bool, lambda v: isinstance(v, bool), None),
 }
 
 OVERRIDABLE_KEYS = sorted(_OVERRIDABLE)

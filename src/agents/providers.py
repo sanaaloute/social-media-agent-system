@@ -25,6 +25,33 @@ logger = logging.getLogger(__name__)
 
 _TIMEOUT = 60.0
 _JSON_INSTRUCTION = "Respond with a single JSON object only."
+_RETRY_ATTEMPTS = 3
+_RETRY_BASE_DELAY = 1.0  # seconds; doubles each attempt
+
+
+def _with_retry(fn, attempts: int = _RETRY_ATTEMPTS):
+    """Call fn() with exponential-backoff retries on transient HTTP errors.
+
+    Only transport-level failures (timeouts, 5xx, connection errors) are
+    retried — a definitive 4xx answer means the request itself is wrong.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code < 500:
+                raise
+            last_exc = exc
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError) as exc:
+            last_exc = exc
+        delay = _RETRY_BASE_DELAY * (2**attempt)
+        logger.warning(
+            "LLM call failed (attempt %d/%d): %s — retrying in %.1fs",
+            attempt + 1, attempts, last_exc, delay,
+        )
+        time.sleep(delay)
+    raise last_exc  # type: ignore[misc]
 
 
 def _extract_json(text: str) -> dict:
@@ -78,8 +105,14 @@ class LLMProvider(ABC):
         """Return a free-text completion."""
 
     def complete_json(self, system: str, prompt: str) -> dict:
-        """Return a JSON object completion; {} on any parse failure."""
-        raw = self.complete(system, f"{prompt}\n\n{_JSON_INSTRUCTION}")
+        """Return a JSON object completion; {} on any parse failure.
+
+        Transient transport errors are retried with backoff; provider
+        outages are handled one level up by FallbackLLM.
+        """
+        raw = _with_retry(
+            lambda: self.complete(system, f"{prompt}\n\n{_JSON_INSTRUCTION}")
+        )
         return _extract_json(raw)
 
 
@@ -187,8 +220,51 @@ class OllamaLLM(LLMProvider):
         return self._chat(system, prompt)
 
     def complete_json(self, system: str, prompt: str) -> dict:
-        raw = self._chat(system, f"{prompt}\n\n{_JSON_INSTRUCTION}", json_mode=True)
+        raw = _with_retry(
+            lambda: self._chat(
+                system, f"{prompt}\n\n{_JSON_INSTRUCTION}", json_mode=True
+            )
+        )
         return _extract_json(raw)
+
+
+class FallbackLLM(LLMProvider):
+    """Primary provider with an ordered fallback chain (§6.2 resilience).
+
+    If the primary raises (outage, missing key), each fallback is tried in
+    order. An empty/invalid JSON answer from the primary is NOT treated as
+    a failure — it is a legitimate degrade the nodes already handle.
+    """
+
+    def __init__(self, primary: LLMProvider, fallbacks: list[LLMProvider]):
+        self._primary = primary
+        self._fallbacks = fallbacks
+
+    def complete(self, system: str, prompt: str) -> str:
+        try:
+            return self._primary.complete(system, prompt)
+        except Exception as exc:
+            logger.warning("primary LLM failed (%s); trying fallbacks", exc)
+        for provider in self._fallbacks:
+            try:
+                return provider.complete(system, prompt)
+            except Exception as exc:
+                logger.warning("fallback LLM %s failed: %s",
+                               type(provider).__name__, exc)
+        raise RuntimeError("all LLM providers in the fallback chain failed")
+
+    def complete_json(self, system: str, prompt: str) -> dict:
+        try:
+            return self._primary.complete_json(system, prompt)
+        except Exception as exc:
+            logger.warning("primary LLM failed (%s); trying fallbacks", exc)
+        for provider in self._fallbacks:
+            try:
+                return provider.complete_json(system, prompt)
+            except Exception as exc:
+                logger.warning("fallback LLM %s failed: %s",
+                               type(provider).__name__, exc)
+        return {}  # nodes fall back to their deterministic defaults
 
 
 class OpenRouterLLM(LLMProvider):
@@ -602,6 +678,20 @@ class KieVideo(_KieBase, VideoProvider):
 
 # ── Factories ─────────────────────────────────────────────────────────
 
+
+def _lazy_local_image() -> ImageProvider:
+    """Deferred import — local_media pulls no heavy deps at module level."""
+    from src.agents.local_media import LocalDiffusionImage
+
+    return LocalDiffusionImage()
+
+
+def _lazy_local_video() -> VideoProvider:
+    from src.agents.local_media import LocalDiffusionVideo
+
+    return LocalDiffusionVideo()
+
+
 _LLM_PROVIDERS = {
     "mock": MockLLM,
     "claude": ClaudeLLM,
@@ -614,24 +704,46 @@ _IMAGE_PROVIDERS = {
     "dalle": DallEImage,
     "stable_diffusion": StableDiffusionImage,
     "kie": KieImage,
+    "local": _lazy_local_image,
 }
 _VIDEO_PROVIDERS = {
     "mock": MockVideo,
     "falai": FalAIVideo,
     "kling": KlingVideo,
     "kie": KieVideo,
+    "local": _lazy_local_video,
 }
 
 # Instances are cached per provider name so a runtime settings change
 # (settings page) takes effect on the next pipeline run.
 _llm_providers_cache: dict[str, LLMProvider] = {}
+_llm_fallback_wrapped: dict[str, LLMProvider] = {}
 _image_providers_cache: dict[str, ImageProvider] = {}
 _video_providers_cache: dict[str, VideoProvider] = {}
 
 
 def get_llm_provider() -> LLMProvider:
-    """Return the shared LLM provider selected by the runtime setting."""
+    """Return the shared LLM provider selected by the runtime setting.
+
+    When a fallback provider is configured (``llm_fallback_provider``) and
+    differs from the primary, the result is wrapped in a FallbackLLM chain.
+    """
     name = runtime_settings.get_value("llm_provider")
+    primary = _instantiate_llm(name)
+    fallback_name = get_settings().llm_fallback_provider
+    if fallback_name and fallback_name != name:
+        try:
+            fallback = _instantiate_llm(fallback_name)
+        except Exception as exc:
+            logger.warning("LLM fallback %r unusable: %s", fallback_name, exc)
+        else:
+            if name not in _llm_fallback_wrapped:
+                _llm_fallback_wrapped[name] = FallbackLLM(primary, [fallback])
+            return _llm_fallback_wrapped[name]
+    return primary
+
+
+def _instantiate_llm(name: str) -> LLMProvider:
     if name not in _LLM_PROVIDERS:
         raise ValueError(
             f"Unknown llm_provider {name!r}; expected one of {sorted(_LLM_PROVIDERS)}"

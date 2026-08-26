@@ -43,6 +43,13 @@ def critic_agent(state: AgentState) -> dict:
             "feedback": "Drafts are on-topic and platform-appropriate.",
         }
     llm = get_llm_provider()
+    revision = state.get("revision_count", 0)
+    revision_note = (
+        f"\nThis is revision round {revision} of previously rejected drafts "
+        "— be strict about whether the feedback was actually addressed."
+        if revision
+        else ""
+    )
     report = merge_llm_schema(
         QualityReport,
         defaults,
@@ -51,7 +58,7 @@ def critic_agent(state: AgentState) -> dict:
             prompt=(
                 "Review these platform drafts and return JSON like "
                 '{"approved": true, "score": 0.0-1.0, "issues": ["..."], '
-                '"feedback": "..."}.\nDrafts:\n'
+                '"feedback": "..."}.' + revision_note + "\nDrafts:\n"
                 + json.dumps(drafts, ensure_ascii=False)[:4000]
             ),
         ),

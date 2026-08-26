@@ -14,6 +14,7 @@ import logging
 
 import httpx
 
+from src.agents.memory import recall
 from src.agents.providers import get_llm_provider, merge_llm_schema
 from src.agents.state import AgentState
 from src.agents.web_research import search_hot_topics
@@ -38,6 +39,26 @@ def researcher_agent(state: AgentState) -> dict:
         except httpx.HTTPError as exc:
             logger.warning("web research unavailable: %s", exc)
             news_error = f"web research unavailable: {exc}"
+
+    # Memory: don't resurface topics this brand already covered recently.
+    brand_id = brand.get("brand_id") or ""
+    if news and brand_id:
+        covered = {
+            t.lower()
+            for t in recall(brand_id, "covered_topic", limit=50, since_days=30)
+            if len(t) > 15
+        }
+        if covered:
+            fresh = [
+                item
+                for item in news
+                if not any(
+                    c in item["title"].lower() or item["title"].lower() in c
+                    for c in covered
+                )
+            ]
+            if fresh:
+                news = fresh
 
     # The subject every downstream agent writes about.
     chosen_topic = topic or (
