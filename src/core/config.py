@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     # Local diffusion (optional: pip install -r requirements-local.txt)
     local_image_model: str = "stabilityai/sdxl-turbo"
     local_video_model: str = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+    local_video_seconds: int = 2  # target clip length; >5s uses segment chaining
 
     # Autopilot (fully autonomous mode; off by default — HITL is the default)
     autopilot_enabled: bool = False

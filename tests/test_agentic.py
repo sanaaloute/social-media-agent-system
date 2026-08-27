@@ -296,3 +296,14 @@ def test_local_media_requires_optional_deps(monkeypatch):
     monkeypatch.undo()
     # Constructor itself is cheap and must not pull heavy deps.
     assert LocalDiffusionImage()._model_id
+
+
+def test_local_video_segment_math():
+    from src.agents.local_media import LocalDiffusionVideo
+
+    provider = LocalDiffusionVideo()
+    assert provider._segment_count(2) == 1
+    assert provider._segment_count(5) == 1
+    assert provider._segment_count(6) == 2
+    assert provider._segment_count(40) == 8
+    assert provider._segment_count(60) == 12
