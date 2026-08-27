@@ -415,21 +415,55 @@ class VideoProvider(ABC):
 
 
 class MockVideo(VideoProvider):
-    """Writes a small placeholder .mp4 (a text notice, not a real video)."""
+    """Writes a small but REAL playable .mp4 (animated placeholder).
+
+    Uses imageio-ffmpeg when available (base dependency); falls back to a
+    text notice only if the video stack is genuinely absent.
+    """
 
     def generate(self, prompt: str, out_dir: str, count: int = 1) -> list[str]:
         os.makedirs(out_dir, exist_ok=True)
         paths = []
         for i in range(count):
             path = os.path.join(out_dir, f"video_{i + 1}.mp4")
-            notice = (
-                "MOCK VIDEO PLACEHOLDER — not a playable video file.\n"
-                f"prompt: {prompt}\n"
-            )
-            with open(path, "wb") as fh:
-                fh.write(notice.encode("utf-8"))
+            try:
+                self._write_placeholder_mp4(path, prompt)
+            except ImportError:
+                notice = (
+                    "MOCK VIDEO PLACEHOLDER — imageio not installed.\n"
+                    f"prompt: {prompt}\n"
+                )
+                with open(path, "wb") as fh:
+                    fh.write(notice.encode("utf-8"))
             paths.append(path)
         return paths
+
+    @staticmethod
+    def _write_placeholder_mp4(path: str, prompt: str) -> None:
+        """16-frame animated title card: sliding gradient + prompt text."""
+        import imageio.v2 as imageio
+        import numpy as np
+        from PIL import Image, ImageDraw
+
+        width, height, frames = 640, 360, 16
+        writer = imageio.get_writer(path, fps=8, codec="libx264", quality=6)
+        try:
+            for frame in range(frames):
+                t = frame / frames
+                r = int(20 + 60 * t)
+                g = int(30 + 40 * (1 - t))
+                b = int(90 + 100 * t)
+                img = Image.new("RGB", (width, height), (r, g, b))
+                draw = ImageDraw.Draw(img)
+                draw.text((24, 20), "MOCK VIDEO PLACEHOLDER", fill=(255, 255, 255))
+                draw.text(
+                    (24, 48),
+                    textwrap.shorten(prompt, width=70) if prompt else "",
+                    fill=(200, 220, 255),
+                )
+                writer.append_data(np.asarray(img))
+        finally:
+            writer.close()
 
 
 class FalAIVideo(VideoProvider):

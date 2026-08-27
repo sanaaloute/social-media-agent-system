@@ -7,8 +7,9 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import (
@@ -24,6 +25,7 @@ from src.api.routes import (
 )
 from src.api.websocket import status as ws_status
 from src.api.websocket.status import status_ws
+from src.core.config import get_settings
 from src.core.database.engine import init_db
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -48,6 +50,18 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.get("/media/{path:path}")
+    def serve_media(path: str):
+        """Serve generated media files, confined to the media cache dir."""
+        root = Path(get_settings().media_cache_dir).resolve()
+        target = (root / path).resolve()
+        if root != target and root not in target.parents:
+            raise HTTPException(403, "path outside the media cache")
+        if not target.is_file():
+            raise HTTPException(404, "media not found")
+        return FileResponse(target)
+
     app.include_router(tasks.router, prefix="/api")
     app.include_router(contents.router, prefix="/api")
     app.include_router(approvals.router, prefix="/api")
