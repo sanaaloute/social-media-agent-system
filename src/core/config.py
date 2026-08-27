@@ -16,10 +16,10 @@ class Settings(BaseSettings):
     dry_run: bool = True  # publishers simulate success instead of live calls
 
     # Generation providers
-    llm_provider: str = "mock"  # mock | ollama | openrouter | claude | openai
-    llm_fallback_provider: str = "mock"  # backup LLM when the primary fails; "" = none
-    image_provider: str = "mock"  # mock | kie | dalle | stable_diffusion | local
-    video_provider: str = "mock"  # mock | kie | falai | kling | local
+    llm_provider: str = "ollama"  # ollama | openrouter | claude | openai
+    llm_fallback_provider: str = ""  # backup LLM when the primary fails; "" = none
+    image_provider: str = "local"  # local | kie | dalle | stable_diffusion
+    video_provider: str = "local"  # local | kie | falai | kling
 
     # Provider credentials
     anthropic_api_key: str = ""

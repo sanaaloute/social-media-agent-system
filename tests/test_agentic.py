@@ -6,7 +6,7 @@ import pytest
 
 from src.agents import providers, researcher, writer
 from src.agents.memory import recall, remember
-from src.agents.providers import FallbackLLM, MockLLM, _with_retry
+from src.agents.providers import FallbackLLM, LLMProvider, _with_retry
 from src.core.models import Brand
 
 
@@ -139,7 +139,7 @@ def test_retry_gives_up_after_attempts(monkeypatch):
 # ── LLM fallback ───────────────────────────────────────────────────────
 
 
-class _DeadLLM(MockLLM):
+class _DeadLLM(LLMProvider):
     def complete(self, system, prompt):
         raise RuntimeError("provider down")
 
@@ -147,7 +147,7 @@ class _DeadLLM(MockLLM):
         raise RuntimeError("provider down")
 
 
-class _AliveLLM(MockLLM):
+class _AliveLLM(LLMProvider):
     def complete(self, system, prompt):
         return "fallback-text"
 

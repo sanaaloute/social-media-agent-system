@@ -96,7 +96,7 @@ class LocalDiffusionVideo(VideoProvider):
             torch, diffusers = _load_torch()
             if not torch.cuda.is_available():
                 raise RuntimeError(
-                    "Local video generation needs a CUDA GPU; use the mock or "
+                    "Local video generation needs a CUDA GPU; use the kie or "
                     "kie provider on CPU."
                 )
             logger.info("loading local video model %s", self._model_id)

@@ -25,12 +25,12 @@ def _to_bool(value: Any) -> bool:
 _OVERRIDABLE: dict[str, tuple[Callable[[Any], Any], Callable[[Any], bool], Optional[list]]] = {
     "dry_run": (_to_bool, lambda v: isinstance(v, bool), None),
     "max_posts_per_account_per_day": (int, lambda v: 1 <= v <= 1000, None),
-    "llm_provider": (str, lambda v: v in ("mock", "ollama", "openrouter", "claude", "openai"),
-                     ["mock", "ollama", "openrouter", "claude", "openai"]),
-    "image_provider": (str, lambda v: v in ("mock", "kie", "dalle", "stable_diffusion", "local"),
-                       ["mock", "kie", "dalle", "stable_diffusion", "local"]),
-    "video_provider": (str, lambda v: v in ("mock", "kie", "falai", "kling", "local"),
-                       ["mock", "kie", "falai", "kling", "local"]),
+    "llm_provider": (str, lambda v: v in ("ollama", "openrouter", "claude", "openai"),
+                     ["ollama", "openrouter", "claude", "openai"]),
+    "image_provider": (str, lambda v: v in ("local", "kie", "dalle", "stable_diffusion"),
+                       ["local", "kie", "dalle", "stable_diffusion"]),
+    "video_provider": (str, lambda v: v in ("local", "kie", "falai", "kling"),
+                       ["local", "kie", "falai", "kling"]),
     "autopilot_enabled": (_to_bool, lambda v: isinstance(v, bool), None),
 }
 

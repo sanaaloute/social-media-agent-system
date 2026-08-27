@@ -7,7 +7,7 @@ A multi-agent (LangGraph) system for multimodal social-media content generation 
 - **User interaction** — FastAPI review panel (`/panel`) + settings page (`/panel/settings.html`) + REST API (`/api/...`); every post requires explicit human approval unless the brand runs on autopilot.
 - **LangGraph orchestration** — a Supervisor routes work through specialized agents: Research, Planner, Writer, Image, Video, Critic, with a critic→writer reflection loop (capped revisions).
 - **Agentic capabilities** — brand-scoped long-term **memory** (covered topics, reviewer preferences), web **tooling** (Google News hot-topic discovery), per-node **structured logs**, **retry** with backoff on transient LLM errors, and an **LLM fallback chain** (primary → configured fallback → deterministic defaults).
-- **Generation providers** — LLM: Ollama (local GPU), OpenRouter, Claude, OpenAI; image: kie.ai, DALL-E, Stable Diffusion, local diffusion (GPU); video: kie.ai, fal.ai, Kling, local diffusion (GPU). Keyless `mock` defaults for everything.
+- **Generation providers** — LLM: Ollama (local GPU), OpenRouter, Claude, OpenAI; image: kie.ai, DALL-E, Stable Diffusion, local diffusion (GPU); video: kie.ai, fal.ai, Kling, local diffusion (GPU). Local models are the defaults — no fake/mock providers ship in the product.
 - **Publisher adapters** — official APIs for Facebook, Instagram, LinkedIn, YouTube, Twitter/X, and TikTok; Playwright browser automation for X and TikTok.
 - **Infrastructure** — PostgreSQL (state, credentials, audit, memory), Redis (cache, rate limits, broker), Celery (task queue + autopilot beat; eager mode for local dev).
 
@@ -55,7 +55,7 @@ uvicorn src.api.main:app --reload
 
 Open `http://localhost:8000/panel` for the review panel.
 
-The default configuration is fully local — SQLite database, eager (in-process) queue, mock generation providers, and dry-run publishing — so the entire generate → review → publish loop works with zero credentials.
+The default configuration is fully local — SQLite database, eager (in-process) queue, local generation providers (Ollama LLM + local diffusion on your GPU), and dry-run publishing — so the entire generate → review → publish loop works with zero cloud credentials.
 
 ## Quickstart — Docker
 
@@ -97,7 +97,7 @@ All values are read from environment variables / `.env` (see `.env.example`). Th
 | `REDIS_URL` | *(empty)* | Cache / rate limits / Celery broker; in-memory fallback when unset |
 | `QUEUE_MODE` | `eager` | `eager` = run tasks inline; `celery` = real queue |
 | `DRY_RUN` | `true` | Publishers simulate success instead of calling live APIs |
-| `LLM_PROVIDER` / `IMAGE_PROVIDER` / `VIDEO_PROVIDER` | `mock` | Generation backends (`claude`/`openai`/`ollama`, `dalle`/`stable_diffusion`, `falai`/`kling`) |
+| `LLM_PROVIDER` / `IMAGE_PROVIDER` / `VIDEO_PROVIDER` | `ollama` / `local` / `local` | Generation backends (`openrouter`/`claude`/`openai`, `kie`/`dalle`/`stable_diffusion`, `kie`/`falai`/`kling`) |
 | `ENCRYPTION_KEY` | *(empty)* | AES-256 key (base64url-encoded 32 bytes) for stored platform credentials |
 | `MAX_POSTS_PER_ACCOUNT_PER_DAY` | `10` | Per-account daily posting cap, enforced by all adapters |
 

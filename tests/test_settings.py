@@ -18,7 +18,7 @@ def test_get_settings_defaults(client):
     assert set(settings) == set(runtime_settings.OVERRIDABLE_KEYS)
     assert settings["dry_run"]["value"] is True  # DRY_RUN=true in test env
     assert settings["dry_run"]["overridden"] is False
-    assert settings["llm_provider"]["choices"] == ["mock", "ollama", "openrouter", "claude", "openai"]
+    assert settings["llm_provider"]["choices"] == ["ollama", "openrouter", "claude", "openai"]
 
 
 def test_dry_run_override_changes_adapter_behavior(client):

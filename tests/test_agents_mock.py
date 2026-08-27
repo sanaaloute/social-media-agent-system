@@ -10,7 +10,7 @@ import httpx
 from sqlmodel import select
 
 from src.agents import run_generation
-from src.agents.providers import MockImage, MockVideo
+from tests.doubles import StubImage, StubVideo
 from src.core.models import ApprovalStatus, ContentTask, GeneratedContent, TaskStatus
 
 
@@ -56,7 +56,7 @@ def test_pipeline_unknown_task_raises():
 
 
 def test_mock_image_provider_writes_png(tmp_path):
-    paths = MockImage().generate("a cat sitting on a keyboard", str(tmp_path), count=2)
+    paths = StubImage().generate("a cat sitting on a keyboard", str(tmp_path), count=2)
     assert len(paths) == 2
     for p in paths:
         assert os.path.exists(p)
@@ -65,7 +65,7 @@ def test_mock_image_provider_writes_png(tmp_path):
 
 
 def test_mock_video_provider_writes_file(tmp_path):
-    paths = MockVideo().generate("10s product teaser", str(tmp_path), count=1)
+    paths = StubVideo().generate("10s product teaser", str(tmp_path), count=1)
     assert len(paths) == 1
     assert os.path.exists(paths[0])
     assert os.path.getsize(paths[0]) > 0
@@ -129,7 +129,7 @@ def test_image_provider_network_error_does_not_kill_run(session, monkeypatch):
     def _boom(self, prompt, out_dir, count=1):
         raise httpx.ConnectError("boom")
 
-    monkeypatch.setattr(MockImage, "generate", _boom)
+    monkeypatch.setattr(StubImage, "generate", _boom)
 
     task = ContentTask(
         brand_id="brand-1",

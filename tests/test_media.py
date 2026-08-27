@@ -1,7 +1,7 @@
 """Media serving route + real playable mock video (§9 panel previews)."""
 import os
 
-from src.agents.providers import MockVideo
+from tests.doubles import StubVideo
 from src.core.config import get_settings
 
 
@@ -28,7 +28,7 @@ def test_media_route_404_for_missing(client):
 
 
 def test_mock_video_writes_real_playable_mp4(tmp_path):
-    paths = MockVideo().generate("test clip", str(tmp_path), count=1)
+    paths = StubVideo().generate("test clip", str(tmp_path), count=1)
     with open(paths[0], "rb") as fh:
         header = fh.read(12)
     # ISO base media file format: bytes 4-8 are the 'ftyp' box marker.
