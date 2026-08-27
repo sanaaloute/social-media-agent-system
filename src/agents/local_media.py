@@ -37,8 +37,14 @@ def _load_torch():
     return torch, diffusers
 
 
-def _device(torch) -> str:
-    return "cuda" if torch.cuda.is_available() else "cpu"
+def _device_and_dtype(torch):
+    """cuda (NVIDIA) -> mps (Apple Silicon) -> cpu, best available first."""
+    if torch.cuda.is_available():
+        return "cuda", torch.float16
+    mps = getattr(torch.backends, "mps", None)
+    if mps is not None and mps.is_available():
+        return "mps", torch.float16
+    return "cpu", torch.float32
 
 
 class LocalDiffusionImage(ImageProvider):
@@ -50,11 +56,12 @@ class LocalDiffusionImage(ImageProvider):
     def _pipe(self):
         if "image" not in _pipes:
             torch, diffusers = _load_torch()
-            device = _device(torch)
-            dtype = torch.float16 if device == "cuda" else torch.float32
+            device, dtype = _device_and_dtype(torch)
             logger.info("loading local image model %s on %s", self._model_id, device)
             pipe = diffusers.AutoPipelineForText2Image.from_pretrained(
-                self._model_id, torch_dtype=dtype, variant="fp16" if device == "cuda" else None
+                self._model_id,
+                torch_dtype=dtype,
+                variant="fp16" if device != "cpu" else None,
             )
             pipe.to(device)
             _pipes["image"] = pipe
@@ -101,16 +108,21 @@ class LocalDiffusionVideo(VideoProvider):
     def _pipe(self):
         if "video" not in _pipes:
             torch, diffusers = _load_torch()
-            if not torch.cuda.is_available():
+            device, dtype = _device_and_dtype(torch)
+            if device == "cpu":
                 raise RuntimeError(
-                    "Local video generation needs a CUDA GPU; use the kie "
-                    "provider on CPU."
+                    "Local video generation needs a GPU (CUDA or Apple "
+                    "Silicon MPS); use the kie provider on CPU."
                 )
-            logger.info("loading local video model %s", self._model_id)
+            logger.info("loading local video model %s on %s", self._model_id, device)
             pipe = diffusers.WanPipeline.from_pretrained(
-                self._model_id, torch_dtype=torch.bfloat16
+                self._model_id, torch_dtype=dtype
             )
-            pipe.enable_model_cpu_offload()  # fits a 16GB card
+            if device == "cuda":
+                pipe.enable_model_cpu_offload()  # fits a 16GB card
+            else:
+                # Apple Silicon unified memory (32GB) holds the whole model.
+                pipe.to(device)
             _pipes["video"] = pipe
         return _pipes["video"]
 

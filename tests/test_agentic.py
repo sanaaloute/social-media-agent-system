@@ -345,3 +345,37 @@ def test_autopilot_rotates_platforms(session, monkeypatch):
     session.commit()
     autopilot_tick(session)
     assert _next_platform(session, brand) == ["tiktok"]
+
+
+def test_device_selection_prefers_cuda_then_mps(monkeypatch):
+    from src.agents import local_media
+
+    class _MPS:
+        @staticmethod
+        def is_available():
+            return True
+
+    class FakeTorch:
+        float16 = "f16"
+        float32 = "f32"
+        bfloat16 = "bf16"
+
+        class backends:
+            mps = _MPS
+
+        @staticmethod
+        def cuda_is_available():
+            return False
+
+    FakeTorch.cuda = type("cuda", (), {"is_available": staticmethod(lambda: False)})
+    device, dtype = local_media._device_and_dtype(FakeTorch)
+    assert device == "mps" and dtype == "f16"
+
+    FakeTorch.cuda = type("cuda", (), {"is_available": staticmethod(lambda: True)})
+    device, dtype = local_media._device_and_dtype(FakeTorch)
+    assert device == "cuda"
+
+    FakeTorch.cuda = type("cuda", (), {"is_available": staticmethod(lambda: False)})
+    monkeypatch.setattr(FakeTorch.backends, "mps", None)
+    device, dtype = local_media._device_and_dtype(FakeTorch)
+    assert device == "cpu" and dtype == "f32"
