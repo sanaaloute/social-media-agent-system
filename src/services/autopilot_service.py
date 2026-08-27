@@ -15,11 +15,25 @@ from datetime import datetime, timedelta
 from sqlmodel import Session, select
 
 from src.core import runtime_settings
-from src.core.config import get_settings
 from src.core.models import ApprovalStatus, Brand, ContentTask, GeneratedContent
 from src.services import approval_service, content_service, schedule_service
 
 logger = logging.getLogger(__name__)
+
+
+def _next_platform(session: Session, brand: Brand) -> list[str]:
+    """Round-robin one platform per task: a task per tick = a post per tick.
+
+    Rotation is derived from the brand's task count, so it is stable across
+    restarts and needs no extra state.
+    """
+    platforms = list(brand.platforms)
+    if len(platforms) <= 1:
+        return platforms
+    task_count = session.exec(
+        select(ContentTask).where(ContentTask.brand_id == brand.id)
+    ).all()
+    return [platforms[len(task_count) % len(platforms)]]
 
 
 def autopilot_tick(session: Session) -> dict:
@@ -29,7 +43,7 @@ def autopilot_tick(session: Session) -> dict:
         return summary
 
     brands = list(session.exec(select(Brand).where(Brand.autopilot.is_(True))).all())
-    interval = timedelta(hours=get_settings().autopilot_interval_hours)
+    interval = timedelta(hours=runtime_settings.get_value("autopilot_interval_hours"))
 
     for brand in brands:
         if not brand.platforms:
@@ -67,11 +81,14 @@ def autopilot_tick(session: Session) -> dict:
             .order_by(ContentTask.created_at.desc())
         ).first()
         if latest is None or datetime.utcnow() - latest.created_at >= interval:
-            logger.info("autopilot: creating task for brand %s", brand.name)
+            platforms = _next_platform(session, brand)
+            logger.info(
+                "autopilot: creating task for brand %s on %s", brand.name, platforms
+            )
             task = content_service.create_task(
                 session,
                 brand_id=brand.id,
-                platforms=list(brand.platforms),
+                platforms=platforms,
                 topic="",
                 content_type="mixed",
             )

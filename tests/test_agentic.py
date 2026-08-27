@@ -307,3 +307,41 @@ def test_local_video_segment_math():
     assert provider._segment_count(6) == 2
     assert provider._segment_count(40) == 8
     assert provider._segment_count(60) == 12
+
+
+def test_autopilot_rotates_platforms(session, monkeypatch):
+    from src.core import runtime_settings
+    from src.core.models import ContentTask
+    from src.services.autopilot_service import _next_platform, autopilot_tick
+
+    monkeypatch.setattr(
+        researcher,
+        "search_hot_topics",
+        lambda queries, **k: [
+            {"title": "Fresh robotics story", "link": "", "published": "",
+             "source": "X", "query": "robotics"},
+        ],
+    )
+    runtime_settings.set_value("autopilot_enabled", True)
+    runtime_settings.set_value("autopilot_interval_hours", 1)
+    brand = Brand(name="Rotator", niche="tech", keywords=["robotics"],
+                  platforms=["twitter", "instagram", "tiktok"], autopilot=True)
+    session.add(brand)
+    session.commit()
+
+    assert _next_platform(session, brand) == ["twitter"]
+    autopilot_tick(session)
+    assert _next_platform(session, brand) == ["instagram"]
+    autopilot_tick(session)  # cooldown: no new task, rotation unchanged
+    assert _next_platform(session, brand) == ["instagram"]
+
+    # Force the interval to pass, then rotation advances.
+    task = session.exec(
+        __import__("sqlmodel").select(ContentTask)
+        .where(ContentTask.brand_id == brand.id)
+    ).first()
+    task.created_at = task.created_at - __import__("datetime").timedelta(hours=2)
+    session.add(task)
+    session.commit()
+    autopilot_tick(session)
+    assert _next_platform(session, brand) == ["tiktok"]

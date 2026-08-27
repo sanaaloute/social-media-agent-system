@@ -266,6 +266,7 @@ const SETTING_META = {
   image_provider: { name: "Image provider", desc: "Image generation backend. 'local' uses your GPU (needs requirements-local.txt)." },
   video_provider: { name: "Video provider", desc: "Video generation backend. 'local' uses your GPU (needs requirements-local.txt)." },
   autopilot_enabled: { name: "Autopilot (global)", desc: "Master switch for fully autonomous mode: brands flagged autopilot discover topics, generate, auto-approve, and publish on schedule without human review." },
+  autopilot_interval_hours: { name: "Autopilot interval (h)", desc: "Hours between autopilot tasks per brand. Each task posts to ONE platform (round-robin), so 1 = a post per hour." },
   local_video_seconds: { name: "Local video length (s)", desc: "Target duration for locally generated clips. Above ~5s, segments are chained — expect 2-4 min of GPU time per 5s segment." },
 };
 

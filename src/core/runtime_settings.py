@@ -32,6 +32,7 @@ _OVERRIDABLE: dict[str, tuple[Callable[[Any], Any], Callable[[Any], bool], Optio
     "video_provider": (str, lambda v: v in ("local", "kie", "falai", "kling"),
                        ["local", "kie", "falai", "kling"]),
     "autopilot_enabled": (_to_bool, lambda v: isinstance(v, bool), None),
+    "autopilot_interval_hours": (int, lambda v: 1 <= v <= 168, None),
     "local_video_seconds": (int, lambda v: 2 <= v <= 120, None),
 }
 
