@@ -66,6 +66,22 @@ class Settings(BaseSettings):
     browser_profiles_dir: str = "./browser_profiles"
     checkpoint_db: str = "checkpoints.db"
 
+    # Outbound proxy for web research / model downloads (e.g. networks where
+    # Google News or HuggingFace are unreachable directly). NO_PROXY applies
+    # too so local services (Ollama) stay direct.
+    http_proxy: str = ""
+    no_proxy: str = "localhost,127.0.0.1"
+
+
+def apply_proxy_settings(settings: "Settings") -> None:
+    """Export proxy env vars so httpx (trust_env) picks them up."""
+    import os
+
+    if settings.http_proxy:
+        os.environ.setdefault("HTTP_PROXY", settings.http_proxy)
+        os.environ.setdefault("HTTPS_PROXY", settings.http_proxy)
+        os.environ.setdefault("NO_PROXY", settings.no_proxy)
+
 
 @lru_cache
 def get_settings() -> Settings:

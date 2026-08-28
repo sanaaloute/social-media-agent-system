@@ -3,9 +3,10 @@ from typing import Generator
 
 from sqlmodel import SQLModel, Session, create_engine
 
-from src.core.config import get_settings
+from src.core.config import apply_proxy_settings, get_settings
 
 _settings = get_settings()
+apply_proxy_settings(_settings)
 
 _connect_args = (
     {"check_same_thread": False}

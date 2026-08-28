@@ -17,7 +17,7 @@ Off by default. Two switches, both required: the global `AUTOPILOT_ENABLED` (set
 
 ## Local media generation (GPU)
 
-Ollama cannot generate images on Windows (experimental, macOS-only) and has no video support, so local media uses HuggingFace `diffusers` on the machine's GPU: `pip install -r requirements-local.txt`, then select `local` as the image/video provider in Settings. Defaults: SDXL-Turbo (image, seconds per image on an RTX 4090) and Wan2.1-T2V-1.3B (video, short dev-grade clips, minutes per clip). Both NVIDIA (CUDA) and Apple Silicon (MPS) GPUs are supported; on macOS, install plain `pip install torch` (MPS is built in) and note Ollama's experimental image generation (`x/z-image-turbo`, `x/flux2-klein`) is also available there.
+Ollama cannot generate images on Windows (experimental, macOS-only) and has no video support, so local media uses HuggingFace `diffusers` on the machine's GPU: `pip install -r requirements-local.txt`, then select `local` as the image/video provider in Settings. Defaults: Z-Image-Turbo (image, ~18s at 1024×1024 on an RTX 4090, CPU-offloaded to fit 16GB) and Wan2.1-T2V-1.3B (video, short dev-grade clips, minutes per clip). Both NVIDIA (CUDA) and Apple Silicon (MPS) GPUs are supported; on macOS, install plain `pip install torch` (MPS is built in) and note Ollama's experimental image generation (`x/z-image-turbo`, `x/flux2-klein`) is also available there. If your network blocks HuggingFace, set `HF_ENDPOINT=https://hf-mirror.com` or `HTTP_PROXY` (see `.env.example`).
 
 ## Project layout
 

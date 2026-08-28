@@ -48,7 +48,11 @@ def _device_and_dtype(torch):
 
 
 class LocalDiffusionImage(ImageProvider):
-    """Text-to-image on the local GPU via diffusers (default SDXL-Turbo)."""
+    """Text-to-image on the local GPU via diffusers.
+
+    Per-model presets: SDXL-Turbo (2 steps), Z-Image-Turbo (9 steps, bf16),
+    everything else (25 steps). Model id comes from ``local_image_model``.
+    """
 
     def __init__(self) -> None:
         self._model_id = get_settings().local_image_model
@@ -57,27 +61,38 @@ class LocalDiffusionImage(ImageProvider):
         if "image" not in _pipes:
             torch, diffusers = _load_torch()
             device, dtype = _device_and_dtype(torch)
+            model = self._model_id.lower()
+            load_kwargs = {"torch_dtype": dtype}
+            if "z-image" in model:
+                # Z-Image wants bfloat16 and has no fp16 variant checkpoint.
+                load_kwargs["torch_dtype"] = torch.bfloat16
+            elif device != "cpu":
+                load_kwargs["variant"] = "fp16"
             logger.info("loading local image model %s on %s", self._model_id, device)
             pipe = diffusers.AutoPipelineForText2Image.from_pretrained(
                 self._model_id,
-                torch_dtype=dtype,
-                variant="fp16" if device != "cpu" else None,
+                **load_kwargs,
             )
-            pipe.to(device)
+            if "z-image" in model:
+                # Z-Image-Turbo is ~25GB (DiT + Qwen3 encoder) — naive full-GPU
+                # loading OOM-crashes a 16GB card. Offload keeps it workable
+                # (slower, but stable). Verified: naive .to("cuda") hard-crashes.
+                pipe.enable_model_cpu_offload()
+            else:
+                pipe.to(device)
             _pipes["image"] = pipe
         return _pipes["image"]
 
     def generate(self, prompt: str, out_dir: str, count: int = 1) -> list[str]:
         os.makedirs(out_dir, exist_ok=True)
         pipe = self._pipe()
-        # SDXL-Turbo needs 1-4 steps and no guidance; other models get a
-        # sensible default — cheap to override later per model.
-        turbo = "turbo" in self._model_id.lower()
-        kwargs = (
-            {"num_inference_steps": 2, "guidance_scale": 0.0}
-            if turbo
-            else {"num_inference_steps": 25, "guidance_scale": 7.5}
-        )
+        model = self._model_id.lower()
+        if "z-image" in model and "turbo" in model:
+            kwargs = {"num_inference_steps": 9, "guidance_scale": 0.0}
+        elif "turbo" in model:  # SDXL-Turbo
+            kwargs = {"num_inference_steps": 2, "guidance_scale": 0.0}
+        else:
+            kwargs = {"num_inference_steps": 25, "guidance_scale": 7.5}
         paths = []
         for i in range(count):
             image = pipe(prompt, **kwargs).images[0]
